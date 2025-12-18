@@ -1,0 +1,18 @@
+[project]
+name = "ib-trading"
+version = "0.1.0"
+description = "QQQ Options Trading Tools for Interactive Brokers"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ib-insync>=0.9.86",
+    "optuna>=4.6.0",
+    "pandas>=2.2.0",
+    "tqdm>=4.67.1",
+]
+
+[project.scripts]
+check-position = "check_position:main"
+close-position = "close_position:main"
+buy-option = "earnings_option_buyer:main"
+trailing-stop = "auto_trailing_stop:main"
