@@ -8,14 +8,11 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import time
 import os
 from io import StringIO
-import threading
+from tqdm import tqdm
 
 BASE_URL = "http://localhost:25503"
-lock = threading.Lock()
-progress = {"done": 0, "total": 0, "rows": 0}
 
 def get_expirations(symbol):
     url = f"{BASE_URL}/v3/option/list/expirations?symbol={symbol}"
@@ -142,16 +139,12 @@ def download_day(args):
 
     # 全ファイル存在ならスキップ
     if os.path.exists(option_file) and os.path.exists(stock_quote_file) and os.path.exists(stock_trade_file):
-        with lock:
-            progress["done"] += 1
-        return f"{date_str}: skip"
+        return {"date": date_str, "status": "skip", "rows": 0}
 
     try:
         price = get_stock_price(symbol, date)
         if price is None:
-            with lock:
-                progress["done"] += 1
-            return f"{date_str}: no price"
+            return {"date": date_str, "status": "no price", "rows": 0}
 
         total_rows = 0
 
@@ -194,15 +187,10 @@ def download_day(args):
                     combined.to_parquet(option_file, index=False)
                     total_rows += len(combined)
 
-        with lock:
-            progress["done"] += 1
-            progress["rows"] += total_rows
-        return f"{date_str}: {total_rows:,} rows"
+        return {"date": date_str, "status": "ok", "rows": total_rows}
 
     except Exception as e:
-        with lock:
-            progress["done"] += 1
-        return f"{date_str}: error - {e}"
+        return {"date": date_str, "status": f"error: {e}", "rows": 0}
 
 def get_trading_days(start_date, end_date):
     days = []
@@ -233,32 +221,21 @@ def main():
     print(f"満期日: {len(all_expirations)}件")
 
     trading_days = get_trading_days(start_date, end_date)
-    progress["total"] = len(trading_days)
     print(f"取引日: {len(trading_days)}日")
     print()
 
     tasks = [(symbol, date, all_expirations, output_dir) for date in trading_days]
 
-    print("ダウンロード開始...")
-    start_time = time.time()
-
+    total_rows = 0
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(download_day, task): task for task in tasks}
+        futures = [executor.submit(download_day, task) for task in tasks]
 
-        for future in as_completed(futures):
+        for future in tqdm(as_completed(futures), total=len(futures), desc="ダウンロード"):
             result = future.result()
-            elapsed = time.time() - start_time
-            rate = progress["done"] / elapsed * 60 if elapsed > 0 else 0
-            eta = (progress["total"] - progress["done"]) / rate if rate > 0 else 0
+            total_rows += result["rows"]
 
-            print(f"[{progress['done']}/{progress['total']}] {result} "
-                  f"(累計{progress['rows']:,}行, 残り{eta:.0f}分)")
-
-    elapsed = time.time() - start_time
     print()
-    print(f"=== 完了 ===")
-    print(f"累計: {progress['rows']:,}行")
-    print(f"時間: {elapsed/60:.1f}分")
+    print(f"=== 完了: {total_rows:,}行 ===")
 
 if __name__ == "__main__":
     main()
