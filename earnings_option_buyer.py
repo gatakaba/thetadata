@@ -19,6 +19,7 @@ def parse_args():
     group.add_argument('--call', action='store_true', help='CALL purchase (bullish)')
     group.add_argument('--put', action='store_true', help='PUT purchase (bearish)')
     parser.add_argument('--dry-run', action='store_true', help='Price check only, no order')
+    parser.add_argument('--qty', type=int, default=None, help='Exact quantity (overrides budget)')
     parser.add_argument('--budget', type=int, default=5_000_000, help='Budget in JPY, default 5M')
     parser.add_argument('--otm', type=float, default=0, help='OTM pct, 0=ATM')
     parser.add_argument('--expiry', type=str, default=None, help='Expiry YYYYMMDD, default this Friday')
@@ -85,6 +86,9 @@ class EarningsOptionBuyer:
 
     def calc_qty(self, price: float) -> int:
         """購入数量計算"""
+        # --qty指定があればそれを使用
+        if self.args.qty is not None:
+            return self.args.qty
         if price <= 0:
             return 0
         cost_per_contract = price * 100
@@ -135,7 +139,10 @@ class EarningsOptionBuyer:
         print(f"決算後 {self.direction} オプション購入")
         print("=" * 60)
         print(f"方向: {self.direction} {'(上昇予想)' if self.is_call else '(下落予想)'}")
-        print(f"予算: {self.args.budget:,}円 (${self.budget_usd:,.0f})")
+        if self.args.qty:
+            print(f"数量: {self.args.qty}枚（固定）")
+        else:
+            print(f"予算: {self.args.budget:,}円 (${self.budget_usd:,.0f})")
         print(f"OTM: {self.args.otm}%")
         print(f"Dry-run: {self.args.dry_run}")
         print()
