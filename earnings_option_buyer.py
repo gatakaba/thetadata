@@ -24,6 +24,7 @@ def parse_args():
     parser.add_argument('--otm', type=float, default=0, help='OTM pct, 0=ATM')
     parser.add_argument('--expiry', type=str, default=None, help='Expiry YYYYMMDD, default this Friday')
     parser.add_argument('--usd-jpy', type=float, default=150.0, help='USD/JPY rate')
+    parser.add_argument('--trigger', type=float, default=None, help='QQQ price trigger (PUT: >=, CALL: <=)')
     return parser.parse_args()
 
 
@@ -72,6 +73,53 @@ class EarningsOptionBuyer:
         price = ticker.last or ticker.close
         self.ib.cancelMktData(qqq)
         return price
+
+    def wait_for_trigger(self) -> float:
+        """トリガー価格まで待機"""
+        trigger = self.args.trigger
+        qqq = Stock('QQQ', 'SMART', 'USD')
+        self.ib.qualifyContracts(qqq)
+        ticker = self.ib.reqMktData(qqq)
+        self.ib.sleep(2)
+
+        if self.is_call:
+            condition = f"QQQ <= ${trigger:.2f}"
+        else:
+            condition = f"QQQ >= ${trigger:.2f}"
+
+        print(f"トリガー待機中: {condition}")
+        print("Ctrl+C で中断")
+        print("-" * 40)
+
+        try:
+            while True:
+                self.ib.sleep(1)
+                price = ticker.last or ticker.close
+                if price <= 0:
+                    continue
+
+                now = datetime.now().strftime('%H:%M:%S')
+
+                # PUT: QQQが指定価格以上で発動
+                # CALL: QQQが指定価格以下で発動
+                triggered = False
+                if self.is_call and price <= trigger:
+                    triggered = True
+                elif not self.is_call and price >= trigger:
+                    triggered = True
+
+                if triggered:
+                    print(f"\n{now} >>> トリガー発動! QQQ=${price:.2f} <<<")
+                    self.ib.cancelMktData(qqq)
+                    return price
+                else:
+                    diff = price - trigger
+                    print(f"{now} QQQ=${price:.2f} (トリガーまで {diff:+.2f})")
+
+        except KeyboardInterrupt:
+            print("\n中断されました")
+            self.ib.cancelMktData(qqq)
+            raise
 
     def get_option(self, strike: float, expiry: str):
         """オプション契約取得"""
@@ -144,14 +192,26 @@ class EarningsOptionBuyer:
         else:
             print(f"予算: {self.args.budget:,}円 (${self.budget_usd:,.0f})")
         print(f"OTM: {self.args.otm}%")
+        if self.args.trigger:
+            if self.is_call:
+                print(f"トリガー: QQQ <= ${self.args.trigger:.2f} で発注")
+            else:
+                print(f"トリガー: QQQ >= ${self.args.trigger:.2f} で発注")
         print(f"Dry-run: {self.args.dry_run}")
         print()
 
         self.connect()
 
         try:
-            # QQQ価格取得
-            qqq_price = self.get_qqq_price()
+            # トリガー待機
+            if self.args.trigger:
+                try:
+                    qqq_price = self.wait_for_trigger()
+                except KeyboardInterrupt:
+                    return False
+            else:
+                # QQQ価格取得
+                qqq_price = self.get_qqq_price()
             print(f"QQQ現在値: ${qqq_price:.2f}")
 
             # ストライク計算
