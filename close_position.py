@@ -98,6 +98,7 @@ class PositionCloser:
 
             for pos in positions:
                 contract = pos.contract
+                contract.exchange = 'SMART'  # 必須: exchange設定
                 qty = int(pos.position)
                 avg_cost = pos.avgCost / 100  # 1株あたりに変換
 
