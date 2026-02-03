@@ -170,11 +170,25 @@ class MultiTFMomentum:
         return False
 
     def get_account_value(self) -> float:
-        """口座の総資産を取得"""
-        account_values = self.ib.accountValues()
-        for av in account_values:
-            if av.tag == 'NetLiquidation' and av.currency == 'USD':
-                return float(av.value)
+        """口座の総資産を取得（USD換算）"""
+        jpy_value = 0.0
+        usd_value = 0.0
+
+        for av in self.ib.accountSummary():
+            if av.tag == 'NetLiquidation':
+                if av.currency == 'JPY':
+                    jpy_value = float(av.value)
+                elif av.currency == 'USD':
+                    usd_value = float(av.value)
+
+        # USD建てがあればそれを使用、なければJPYを変換
+        if usd_value > 0:
+            return usd_value
+        elif jpy_value > 0:
+            # 円建てをドルに変換（概算レート）
+            usdjpy = 155.0  # TODO: 実際のレートを取得
+            return jpy_value / usdjpy
+
         return 0.0
 
     def calculate_position_size(self, ask_price: float) -> int:
@@ -347,6 +361,8 @@ def main():
     try:
         ib.connect('172.24.32.1', 4001, clientId=80)
         log("IBKRに接続しました")
+
+        ib.sleep(2)  # アカウント情報の取得を待つ
     except Exception as e:
         log(f"接続エラー: {e}")
         return
